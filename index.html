@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Expense Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0f1117;
+    --surface:  #1a1d27;
+    --border:   #2a2d3a;
+    --text:     #e8e8f0;
+    --muted:    #8888aa;
+    --purple:   #7f77dd;
+    --teal:     #1d9e75;
+    --amber:    #ef9f27;
+    --coral:    #d85a30;
+    --blue:     #378add;
+    --green:    #639922;
+    --pink:     #d4537e;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+
+  .container { max-width: 960px; margin: 0 auto; }
+
+  header { margin-bottom: 2rem; }
+  header h1 { font-size: 22px; font-weight: 500; }
+  header p  { font-size: 14px; color: var(--muted); margin-top: 4px; }
+
+  /* Stat cards */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 2rem;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+  }
+  .stat-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .stat-value { font-size: 22px; font-weight: 500; }
+  .stat-value.purple { color: var(--purple); }
+  .stat-value.teal   { color: var(--teal);   }
+  .stat-value.amber  { color: var(--amber);  }
+  .stat-value.coral  { color: var(--coral);  }
+
+  /* Chart cards */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 16px;
+    margin-bottom: 2rem;
+  }
+  .chart-card {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+  }
+  .chart-card h2 { font-size: 14px; font-weight: 500; margin-bottom: 1rem; }
+  .chart-wrap { position: relative; height: 240px; }
+
+  /* Transactions table */
+  .table-card {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    overflow-x: auto;
+  }
+  .table-card h2 { font-size: 14px; font-weight: 500; margin-bottom: 1rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 400;
+    padding: 0 12px 10px 0;
+    border-bottom: 0.5px solid var(--border);
+  }
+  td {
+    padding: 10px 12px 10px 0;
+    border-bottom: 0.5px solid var(--border);
+    vertical-align: middle;
+  }
+  tr:last-child td { border-bottom: none; }
+
+  .cat-badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-weight: 500;
+  }
+  .amount-cell { font-weight: 500; text-align: right; padding-right: 0; }
+
+  .loading {
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+    padding: 3rem 0;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Expense Tracker</h1>
+    <p>Your spending at a glance</p>
+  </header>
+
+  <!-- Stat cards -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total spent</div>
+      <div class="stat-value purple" id="total-spent">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Transactions</div>
+      <div class="stat-value teal" id="total-tx">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg per transaction</div>
+      <div class="stat-value amber" id="avg-tx">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Top category</div>
+      <div class="stat-value coral" id="top-cat">—</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h2>Spending by category</h2>
+      <div class="chart-wrap">
+        <canvas id="pie-chart"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h2>Monthly trend</h2>
+      <div class="chart-wrap">
+        <canvas id="bar-chart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent transactions -->
+  <div class="table-card">
+    <h2>Recent transactions</h2>
+    <div id="table-body"><div class="loading">Loading...</div></div>
+  </div>
+
+</div>
+
+<script>
+  const COLORS = ["#7f77dd","#1d9e75","#ef9f27","#d85a30","#378add","#639922","#d4537e","#8888aa"];
+  const CAT_BG  = { Food:"#2a1f3d", Transport:"#0f2e24", Entertainment:"#2e2010", Shopping:"#2e1a0e", Utilities:"#0e1e2e", default:"#1a1d27" };
+  const CAT_FG  = { Food:"#7f77dd", Transport:"#1d9e75", Entertainment:"#ef9f27", Shopping:"#d85a30",  Utilities:"#378add",  default:"#8888aa" };
+
+  function fmt(n) { return "₹" + Number(n).toLocaleString("en-IN"); }
+
+  const chartDefaults = {
+    plugins: { legend: { labels: { color: "#8888aa", font: { size: 12 } } } },
+    scales:  { x: { ticks: { color: "#8888aa" }, grid: { color: "#2a2d3a" } },
+                y: { ticks: { color: "#8888aa" }, grid: { color: "#2a2d3a" } } }
+  };
+
+  async function loadStats() {
+    const d = await fetch("/api/stats").then(r => r.json());
+    document.getElementById("total-spent").textContent = fmt(d.total_spent);
+    document.getElementById("total-tx").textContent    = d.total_transactions;
+    document.getElementById("avg-tx").textContent      = fmt(d.avg_transaction);
+    document.getElementById("top-cat").textContent     = d.top_category;
+  }
+
+  async function loadPieChart() {
+    const data = await fetch("/api/summary").then(r => r.json());
+    new Chart(document.getElementById("pie-chart"), {
+      type: "doughnut",
+      data: {
+        labels:   data.map(d => d.category),
+        datasets: [{ data: data.map(d => d.total), backgroundColor: COLORS, borderWidth: 0 }]
+      },
+      options: {
+        cutout: "60%",
+        plugins: {
+          legend: { position: "right", labels: { color: "#8888aa", font: { size: 12 }, padding: 12 } },
+          tooltip: { callbacks: { label: ctx => ` ${fmt(ctx.raw)}` } }
+        }
+      }
+    });
+  }
+
+  async function loadBarChart() {
+    const data = await fetch("/api/monthly").then(r => r.json());
+    new Chart(document.getElementById("bar-chart"), {
+      type: "bar",
+      data: {
+        labels:   data.map(d => d.month),
+        datasets: [{ label: "Total (₹)", data: data.map(d => d.total),
+                     backgroundColor: "#7f77dd", borderRadius: 6, borderSkipped: false }]
+      },
+      options: {
+        ...chartDefaults,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ` ${fmt(ctx.raw)}` } }
+        }
+      }
+    });
+  }
+
+  async function loadTable() {
+    const data = await fetch("/api/recent").then(r => r.json());
+    const bg = c => CAT_BG[c]  || CAT_BG.default;
+    const fg = c => CAT_FG[c]  || CAT_FG.default;
+
+    const rows = data.map(r => `
+      <tr>
+        <td>${r.date}</td>
+        <td><span class="cat-badge" style="background:${bg(r.category)};color:${fg(r.category)}">${r.category}</span></td>
+        <td>${r.note || "—"}</td>
+        <td class="amount-cell">${fmt(r.amount)}</td>
+      </tr>`).join("");
+
+    document.getElementById("table-body").innerHTML = `
+      <table>
+        <thead><tr><th>Date</th><th>Category</th><th>Note</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  Promise.all([loadStats(), loadPieChart(), loadBarChart(), loadTable()])
+    .catch(err => {
+      document.getElementById("table-body").innerHTML =
+        `<div class="loading">Could not connect to the API. Make sure Flask is running.<br><small>${err}</small></div>`;
+    });
+</script>
+</body>
+</html>
